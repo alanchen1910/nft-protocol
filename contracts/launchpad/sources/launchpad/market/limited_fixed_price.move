@@ -16,10 +16,8 @@ module ob_launchpad::limited_fixed_price {
     use sui::object::{Self, ID, UID};
     use sui::transfer;
     use sui::tx_context::{Self, TxContext};
-    use sui::kiosk::Kiosk;
+    use sui::kiosk::{Self, Kiosk, KioskOwnerCap};
     use sui::vec_map::{Self, VecMap};
-
-    use ob_kiosk::ob_kiosk;
 
     use ob_launchpad::venue::{Self, Venue};
     use ob_launchpad::listing::{Self, Listing};
@@ -196,24 +194,6 @@ module ob_launchpad::limited_fixed_price {
 
     // === Entrypoints ===
 
-    /// Buy NFT for non-whitelisted sale into new Kiosk
-    ///
-    /// #### Panics
-    ///
-    /// Panics if `Venue` does not exist, is not live, or is whitelisted or
-    /// wallet does not have the necessary funds.
-    public entry fun buy_nft<T: key + store, FT>(
-        listing: &mut Listing,
-        venue_id: ID,
-        wallet: &mut Coin<FT>,
-        ctx: &mut TxContext,
-    ) {
-        let (kiosk, _) =
-            ob_kiosk::ob_kiosk::new_for_address(tx_context::sender(ctx), ctx);
-        buy_nft_into_kiosk<T, FT>(listing, venue_id, wallet, &mut kiosk, ctx);
-        transfer::public_share_object(kiosk);
-    }
-
     /// Buy NFT for non-whitelisted sale
     ///
     /// #### Panics
@@ -225,6 +205,7 @@ module ob_launchpad::limited_fixed_price {
         venue_id: ID,
         wallet: &mut Coin<FT>,
         buyer_kiosk: &mut Kiosk,
+        kiosk_cap: &mut KioskOwnerCap,
         ctx: &mut TxContext,
     ) {
         let venue = listing::borrow_venue(listing, venue_id);
@@ -233,27 +214,8 @@ module ob_launchpad::limited_fixed_price {
 
         let nft =
             buy_nft_<T, FT>(listing, venue_id, coin::balance_mut(wallet), ctx);
-        ob_kiosk::deposit(buyer_kiosk, nft, ctx);
-    }
-
-    /// Buy NFT for whitelisted sale into new Kiosk
-    ///
-    /// #### Panics
-    ///
-    /// - If `Venue` does not exist, is not live, or is not whitelisted
-    /// - If whitelist `Certificate` was not issued for given market
-    public entry fun buy_whitelisted_nft<T: key + store, FT>(
-        listing: &mut Listing,
-        venue_id: ID,
-        wallet: &mut Coin<FT>,
-        whitelist_token: Certificate,
-        ctx: &mut TxContext,
-    ) {
-        let (kiosk, _) = ob_kiosk::new(ctx);
-        buy_whitelisted_nft_into_kiosk<T, FT>(
-            listing, venue_id, wallet, &mut kiosk, whitelist_token, ctx,
-        );
-        transfer::public_share_object(kiosk);
+        
+        kiosk::place<T>(buyer_kiosk, kiosk_cap, nft);
     }
 
     /// Buy NFT for whitelisted sale
@@ -267,7 +229,8 @@ module ob_launchpad::limited_fixed_price {
         listing: &mut Listing,
         venue_id: ID,
         wallet: &mut Coin<FT>,
-        kiosk: &mut Kiosk,
+        buyer_kiosk: &mut Kiosk,
+        kiosk_cap: &mut KioskOwnerCap,
         whitelist_token: Certificate,
         ctx: &mut TxContext,
     ) {
@@ -278,7 +241,8 @@ module ob_launchpad::limited_fixed_price {
 
         let nft =
             buy_nft_<T, FT>(listing, venue_id, coin::balance_mut(wallet), ctx);
-        ob_kiosk::deposit(kiosk, nft, ctx);
+        
+        kiosk::place<T>(buyer_kiosk, kiosk_cap, nft);
     }
 
     /// Internal method to buy NFT
